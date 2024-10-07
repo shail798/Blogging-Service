@@ -1,0 +1,60 @@
+version: '3'
+services:
+  fastapi:
+    build: .
+    environment:
+      - RABBITMQ_HOST=rabbitmq  # RabbitMQ host should be the service name, not a URL
+      - RABBITMQ_PORT=5672
+      - ELASTICSEARCH_HOST=http://elasticsearch:9200
+      - PYTHONPATH=/app
+    ports:
+      - "8000:8000"
+    depends_on:
+      - rabbitmq
+      - elasticsearch
+    networks:
+      - blog_network
+
+  rabbitmq:
+    image: "rabbitmq:3-management"
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmqctl", "status"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    networks:
+      - blog_network
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:7.10.0
+    environment:
+      - discovery.type=single-node
+    ports:
+      - "9200:9200"
+    networks:
+      - blog_network
+
+  consumer:
+    build: .
+    working_dir: /app
+    environment:
+      - PYTHONPATH=/app
+      - RABBITMQ_HOST=rabbitmq  # RabbitMQ host should be the service name, not a URL
+      - RABBITMQ_PORT=5672
+      - ELASTICSEARCH_HOST=http://elasticsearch:9200
+    command: /bin/sh -c "sleep 50 && python app/consumer.py"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy  # Make sure RabbitMQ is healthy before consumer starts
+      elasticsearch:
+        condition: service_started
+    networks:
+      - blog_network
+    restart: on-failure
+
+networks:
+  blog_network:
+    driver: bridge
