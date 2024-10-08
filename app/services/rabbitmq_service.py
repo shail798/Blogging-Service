@@ -12,18 +12,17 @@ class RabbitMQService:
         self.channel = None
         self.queue_name = RABBITMQ_QUEUE_NAME
         try:
-            # Establish RabbitMQ connection with host and port, with retries and timeout
             self.connection = pika.BlockingConnection(
                 pika.ConnectionParameters(
                     host=RABBITMQ_HOST,
                     port=RABBITMQ_PORT,
                     connection_attempts=5,  # Number of connection attempts
-                    retry_delay=10  # Delay in seconds between attempts
+                    retry_delay=10,
+                    heartbeat=1000  # Delay in seconds between attempts
                 )
             )
             self.channel = self.connection.channel()
 
-            # Declare the queue with durable property
             self.channel.queue_declare(queue=RABBITMQ_QUEUE_NAME, durable=QUEUE_DURABLE)
             logging.info(f"Connected to RabbitMQ, declared queue: {RABBITMQ_QUEUE_NAME}")
         except pika.exceptions.AMQPConnectionError as e:
@@ -35,7 +34,6 @@ class RabbitMQService:
 
     def send_message(self, message):
         try:
-            # Publish the message with persistent delivery mode
             self.channel.basic_publish(
                 exchange='',
                 routing_key=RABBITMQ_QUEUE_NAME,

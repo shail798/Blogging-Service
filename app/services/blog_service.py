@@ -1,14 +1,16 @@
 # blog_service.py
 
+import json
 import logging
 from app.models.blog import Blog
+from app.models.blog_document import BlogDocument
 from app.services.rabbitmq_service import RabbitMQService
 from app.constants.blog_constants import BLOG_INDEX_NAME, BLOG_SEARCH_FIELDS, BLOG_RESPONSE_FIELDS
 from elasticsearch import Elasticsearch
 from app.config.config import ELASTICSEARCH_HOST
 from elasticsearch import ConnectionError, TransportError, NotFoundError, RequestError
+from app.utils.json_encoder import UUIDEncoder
 
-# Set up logging for better visibility
 logging.basicConfig(level=logging.INFO)
 
 class BlogService:
@@ -23,39 +25,73 @@ class BlogService:
     def submit_blog(self, blog: Blog):
         try:
             blog_data = blog.dict()
-            # Send the blog data to RabbitMQ
-            self.rabbitmq_service.send_message(blog_data)
+            serialized_data = json.dumps(blog_data, cls=UUIDEncoder)
+            self.rabbitmq_service.send_message(serialized_data)
             logging.info("Blog submission successful, blog data queued.")
+        except json.JSONDecodeError as jde:
+            logging.error(f"JSON serialization error while submitting blog: {jde}")
+        except ConnectionError as ce:
+            logging.error(f"Connection error while sending blog to RabbitMQ: {ce}")
         except Exception as e:
-            logging.error(f"Error submitting blog to RabbitMQ: {e}")
-            # Handle error (could also raise an exception depending on requirements)
+            logging.error(f"Unexpected error during blog submission to RabbitMQ: {e}")
 
-    def search_blog(self, query: str):
+    async def search_blog(self, user_id: str = None, text: str = None):
         try:
-            # Search the Elasticsearch index using constants for the fields and index
+            search_query = {
+                "bool": {
+                    "must": [
+                        {"match": {"user_id": user_id}} if user_id else {},
+                        {"match": {"blog_text": text}} if text else {}
+                    ]
+                }
+            }
+
+            # Clean up the search query to remove empty conditions
+            search_query["bool"]["must"] = [q for q in search_query["bool"]["must"] if q]
+
+            # Perform the search
             s = self.es_client.search(
                 index=BLOG_INDEX_NAME,
-                query={"multi_match": {"query": query, "fields": BLOG_SEARCH_FIELDS}}
+                query=search_query
             )
-            logging.info(f"Search completed successfully for query: {query}")
+            logging.info(f"Search completed successfully for user_id: {user_id}, text: {text}")
 
             # Dynamically map the response using BLOG_RESPONSE_FIELDS
             return [
                 {response_key: hit["_source"].get(source_key) for response_key, source_key in BLOG_RESPONSE_FIELDS.items()}
                 for hit in s["hits"]["hits"]
             ]
-        except ConnectionError as ce:  # Catch connection-related errors
+        except ConnectionError as ce:
             logging.error(f"Elasticsearch connection error: {ce}")
             return {"error": "Failed to connect to Elasticsearch"}
-        except NotFoundError as nfe:  # Catch not-found errors (e.g., index or document not found)
+        except NotFoundError as nfe:
             logging.error(f"Elasticsearch resource not found: {nfe}")
             return {"error": "Resource not found in Elasticsearch"}
-        except RequestError as re:  # Catch issues with the query itself (e.g., malformed query)
+        except RequestError as re:
             logging.error(f"Bad Elasticsearch request: {re}")
             return {"error": "Bad request to Elasticsearch"}
-        except TransportError as te:  # Catch transport-related errors (e.g., bad requests, HTTP issues)
+        except TransportError as te:
             logging.error(f"Elasticsearch transport error: {te}")
             return {"error": "Elasticsearch transport error"}
-        except Exception as e:  # Catch any other unexpected exceptions
+        except Exception as e:
             logging.error(f"Unexpected error during search: {e}")
             return {"error": "An unexpected error occurred"}
+
+def save_blog_to_elasticsearch(blog_data):
+    try:
+        document_body = {
+            "blog_title": blog_data.get("blog_title"),
+            "blog_text": blog_data.get("blog_text"),
+            "user_id": blog_data.get("user_id")
+        }
+
+        es_client = Elasticsearch(hosts=[ELASTICSEARCH_HOST])
+        response = es_client.index(
+            index=BLOG_INDEX_NAME,
+            document=document_body,
+            refresh=True
+        )
+        logging.info(f"Blog entry saved to Elasticsearch with ID: {response['_id']}")
+    except Exception as e:
+        logging.error(f"Error saving blog to Elasticsearch: {e}")
+        raise e

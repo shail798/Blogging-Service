@@ -1,11 +1,11 @@
 import time
 import json
 import logging
-from elasticsearch_dsl import Document, Text
 from elasticsearch_dsl.connections import connections
 from app.services.rabbitmq_service import RabbitMQService
+from app.services.blog_service import save_blog_to_elasticsearch
 from app.constants.blog_constants import BLOG_INDEX_NAME, BLOG_RESPONSE_FIELDS
-from app.constants.rabbitmq_constants import MAX_RETRIES,RETRY_DELAY
+from app.constants.rabbitmq_constants import MAX_RETRIES,RETRY_DELAY,MAX_REQUEUE_ATTEMPTS
 from app.config.config import ELASTICSEARCH_HOST
 from elasticsearch import ConnectionError, TransportError, NotFoundError, RequestError
 
@@ -55,48 +55,36 @@ def connect_to_rabbitmq():
         else:
             raise SystemExit("Failed to connect to RabbitMQ after multiple attempts.")
 
-# Define the Elasticsearch document for blogs
-class BlogDocument(Document):
-    blog_title = Text()
-    blog_text = Text()
 
-    class Index:
-        name = BLOG_INDEX_NAME  # Use constant for index name
-
-# Function to process a message and store it in Elasticsearch
 def process_blog(ch, method, properties, body):
     try:
-        blog_data = json.loads(body)
+        blog_data = json.loads(body.decode('utf-8'))
+        
+        if isinstance(blog_data, str):
+            blog_data = json.loads(blog_data)
 
-        # Validate the presence of necessary fields based on the constant map
+        logging.info(f"Parsed blog data: {blog_data}")
+
         if BLOG_RESPONSE_FIELDS['title'] not in blog_data or BLOG_RESPONSE_FIELDS['text'] not in blog_data:
             raise ValueError("Missing required fields in blog data.")
 
-        # Save blog entry to Elasticsearch
-        blog = BlogDocument(
-            blog_title=blog_data[BLOG_RESPONSE_FIELDS['title']], 
-            blog_text=blog_data[BLOG_RESPONSE_FIELDS['text']]
-        )
-        blog.save()
-        logging.info(f"Blog entry saved to Elasticsearch: {blog_data[BLOG_RESPONSE_FIELDS['title']]}")
-
-        # Acknowledge the message in RabbitMQ
+        save_blog_to_elasticsearch(blog_data)
         ch.basic_ack(delivery_tag=method.delivery_tag)
     except ValueError as ve:
         logging.error(f"Validation error: {ve}. Rejecting message.")
-        ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)  # Do not requeue invalid messages
-    except RequestError as re:  # Handle query errors in Elasticsearch
-        logging.error(f"Request error with Elasticsearch: {re}. Requeuing message.")
-        ch.basic_nack(delivery_tag=method.delivery_tag, requeue=True)  # Requeue messages in case of Elasticsearch failure
-    except NotFoundError as nf_err:  # Handle not-found errors (e.g., missing index)
-        logging.error(f"Index or document not found in Elasticsearch: {nf_err}. Requeuing message.")
-        ch.basic_nack(delivery_tag=method.delivery_tag, requeue=True)
-    except TransportError as te:  # Handle transport errors
-        logging.error(f"Transport error with Elasticsearch: {te}. Requeuing message.")
-        ch.basic_nack(delivery_tag=method.delivery_tag, requeue=True)
+        ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
     except Exception as e:
-        logging.error(f"Unexpected error occurred while processing message: {e}. Requeuing message.")
-        ch.basic_nack(delivery_tag=method.delivery_tag, requeue=True)
+        # Check if properties and headers exist before accessing them
+        requeue_count = properties.headers.get('x-requeue-count', 0) if properties and properties.headers else 0
+        if requeue_count < MAX_REQUEUE_ATTEMPTS:
+            # Increment the requeue count and add it to message headers
+            headers = properties.headers or {}
+            headers['x-requeue-count'] = requeue_count + 1
+            logging.error(f"Error: {e}. Requeuing message (attempt {requeue_count + 1}).")
+            ch.basic_nack(delivery_tag=method.delivery_tag, requeue=True)
+        else:
+            logging.error(f"Maximum requeue attempts reached for message. Discarding message: {e}")
+            ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
 
 if __name__ == "__main__":
     # Connect to Elasticsearch with retry
@@ -105,7 +93,6 @@ if __name__ == "__main__":
     # Connect to RabbitMQ with retry
     rabbitmq_service = connect_to_rabbitmq()
 
-    # Start consuming messages from the queue
     try:
         rabbitmq_service.channel.basic_consume(queue=rabbitmq_service.queue_name, on_message_callback=process_blog)
         logging.info("Waiting for messages from RabbitMQ...")
