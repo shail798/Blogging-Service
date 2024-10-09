@@ -78,6 +78,27 @@ This is a blogging service that allows users to submit and search blog entries u
 
    Replace `<RABBITMQ-MANAGEMENT-PORT>` and `<ELASTICSEARCH-NODE-PORT>` with the appropriate ports.
 
+   4.5. **Testing the API:**
+
+- **Submit a Blog Entry**:
+  
+  ```bash
+  curl --location 'http://localhost:30007/submit_blog/' \
+  --header 'Content-Type: application/json' \
+  --data '{
+    "blog_title": "Test Blog",
+    "blog_text": "This is a test blog.",
+    "user_id": "123e4567-e89b-12d3-a456-426614174000"
+  }'
+
+- **Search for a Blog**:
+
+  ```bash
+  curl --location 'http://localhost:30007/search/?user_id=550e8400-e29b-41d4-a716-446655440001&text=My%20First%20Blog' \
+  --header 'accept: application/json'
+
+
+
 
   
 
