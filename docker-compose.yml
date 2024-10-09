@@ -56,6 +56,23 @@ services:
     networks:
       - blog_network
     restart: on-failure
+  
+  health_checker:
+    build: .
+    environment:
+      - APP_TYPE=health_checker
+      - PYTHONPATH=/app
+      - FASTAPI_URL=http://fastapi:8000/health
+      - RABBITMQ_HOST=rabbitmq
+      - RABBITMQ_PORT=5672
+      - ELASTICSEARCH_HOST=http://elasticsearch:9200
+    command: /bin/sh -c "python app/health_check.py"
+    depends_on:
+      - fastapi
+      - rabbitmq
+      - elasticsearch
+    networks:
+      - blog_network
 
 networks:
   blog_network:

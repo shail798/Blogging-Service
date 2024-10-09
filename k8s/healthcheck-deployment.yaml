@@ -1,0 +1,57 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: health-checker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: health-checker
+  template:
+    metadata:
+      labels:
+        app: health-checker
+    spec:
+      containers:
+        - name: health-checker
+          image: shaiendersingh/health-check:latest  
+          env:
+            - name: FASTAPI_URL
+              value: "http://fastapi-service:8000/health" 
+            - name: RABBITMQ_HOST
+              value: "rabbitmq-service"
+            - name: RABBITMQ_PORT
+              value: "5672"
+            - name: ELASTICSEARCH_HOST
+              value: "http://elasticsearch-service:9200"
+            - name: EMAIL_HOST
+              value: "smtp.gmail.com"
+            - name: EMAIL_PORT
+              value: "587"
+            - name: EMAIL_USER
+              value: "pythonalerts7@gmail.com"
+            - name: EMAIL_PASSWORD
+              value: "kwjszrxkiuzjggww" 
+            - name: ALERT_RECIPIENT
+              value: "shail.sodhi798@gmail.com"
+          resources:
+            limits:
+              memory: "256Mi"
+              cpu: "250m"
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+      restartPolicy: Always
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: health-checker-service
+spec:
+  selector:
+    app: health-checker
+  ports:
+    - protocol: TCP
+      port: 8000
+      targetPort: 8000

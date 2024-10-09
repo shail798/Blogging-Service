@@ -3,7 +3,6 @@
 import json
 import logging
 from app.models.blog import Blog
-from app.models.blog_document import BlogDocument
 from app.services.rabbitmq_service import RabbitMQService
 from app.constants.blog_constants import BLOG_INDEX_NAME, BLOG_SEARCH_FIELDS, BLOG_RESPONSE_FIELDS
 from elasticsearch import Elasticsearch

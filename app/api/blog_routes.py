@@ -78,3 +78,13 @@ async def search_blog(user_id: str = None, text: str = None):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=RESPONSE_MESSAGES["SEARCH_FAILED"]
         )
+
+@router.get("/health", status_code=status.HTTP_200_OK)
+def health_check():
+    return JSONResponse(
+        content={
+            "status": "Healthy",
+            "message": "FastAPI service is running properly."
+        },
+        status_code=status.HTTP_200_OK
+    )

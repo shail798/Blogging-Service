@@ -16,10 +16,10 @@ COPY . .
 # Set a default command to run FastAPI
 ARG APP_TYPE=fastapi
 ENV APP_TYPE=${APP_TYPE}
-ENV PYTHONPATH=/app 
+ENV PYTHONPATH=/app
 
 # Expose FastAPI port
 EXPOSE 8000
 
 # Conditional entry point
-CMD ["sh", "-c", "if [ \"$APP_TYPE\" = 'consumer' ] ; then python app/consumer.py; else uvicorn app.main:app --host 0.0.0.0 --port 8000; fi"]
+CMD ["sh", "-c", "if [ \"$APP_TYPE\" = 'consumer' ] ; then python app/consumer.py; elif [ \"$APP_TYPE\" = 'health_checker' ] ; then python app/health_check.py; else uvicorn app.main:app --host 0.0.0.0 --port 8000; fi"]
