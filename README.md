@@ -53,6 +53,7 @@ This is a blogging service that allows users to submit and search blog entries u
          kubectl apply -f consumer-deployment.yml
          kubectl apply -f rabbitmq-deployment.yml
          kubectl apply -f elasticsearch-deployment.yml
+         kubectl apply -f healthcheck-deployment.yml
 
    4.3. **Verify the Deployment:**
 
