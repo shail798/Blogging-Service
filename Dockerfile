@@ -13,8 +13,13 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy the rest of the application code into the container
 COPY . .
 
+# Set a default command to run FastAPI
+ARG APP_TYPE=fastapi
+ENV APP_TYPE=${APP_TYPE}
+ENV PYTHONPATH=/app 
+
 # Expose FastAPI port
 EXPOSE 8000
 
-# Command to run FastAPI
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Conditional entry point
+CMD ["sh", "-c", "if [ \"$APP_TYPE\" = 'consumer' ] ; then python app/consumer.py; else uvicorn app.main:app --host 0.0.0.0 --port 8000; fi"]
